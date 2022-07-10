@@ -2,6 +2,8 @@ package com.pty.netty;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioSocketChannel;
@@ -16,28 +18,39 @@ import java.net.InetSocketAddress;
  */
 public class EventLoopClient {
     public static void main(String[] args) throws InterruptedException {
-        //启动类
-       Channel channel =  new Bootstrap()
+        //带有future、promise的类型都是和异步方法配套使用，用来处理结果
+       ChannelFuture future =  new Bootstrap()
                 .group(new NioEventLoopGroup())
-                // 选择客户 Socket 实现类，NioSocketChannel 表示基于 NIO 的客户端实现
                 .channel(NioSocketChannel.class)
-                // ChannelInitializer 处理器（仅执行一次）
-                // 它的作用是待客户端SocketChannel建立连接后，执行initChannel以便添加更多的处理器
                 .handler(new ChannelInitializer<NioSocketChannel>() {
                     @Override
                     protected void initChannel(NioSocketChannel nioSocketChannel) throws Exception {
-                        // 消息会经过通道 handler 处理，这里是将 String => ByteBuf 编码发出
                         nioSocketChannel.pipeline().addLast(new StringEncoder());
                     }
                 })
-                // 指定要连接的服务器和端口
-                .connect(new InetSocketAddress("localhost",8888))
-                // Netty 中很多方法都是异步的，如 connect
-                // 这时需要使用 sync 方法等待 connect 建立连接完毕
-                .sync()
-                // 获取 channel 对象，它即为通道抽象，可以进行数据读写操作
-                .channel();
-        System.out.println(channel);
-        System.out.println("");
+               //1.连接服务器
+               //connect 是异步非阻塞操作，main线程发起了调用，但是真正执行connect的是另外一个nio线程
+               //nio线程：NioEventLoop 中的线程
+                .connect(new InetSocketAddress("localhost",8888));
+
+       /*
+       //1.调用sync的线程会阻塞，当nio建立连接后会停止阻塞
+        future.sync();
+        //如果没有上面sync，会不阻塞向下获取到channel1
+        Channel channel = future.channel();
+        //向服务器发送数据
+        channel.writeAndFlush("helo");
+        */
+
+        //2.使用addListener（回调对象）方法异步处理结果
+        future.addListener(new ChannelFutureListener() {
+            @Override
+            // 当connect方法执行完毕后，也就是连接真正建立后
+            // 会在NIO线程中调用operationComplete方法
+            public void operationComplete(ChannelFuture channelFuture) throws Exception {
+                Channel channel = channelFuture.channel();
+                channel.writeAndFlush("helo");
+            }
+        });
     }
 }
